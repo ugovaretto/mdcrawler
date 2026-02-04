@@ -3,10 +3,12 @@
 import re
 import hashlib
 import time
+import requests
 from pathlib import Path
 from typing import Set, Dict, Optional
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
+from urllib.request import urlretrieve
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -20,11 +22,13 @@ from docling.datamodel.base_models import DocumentStream
 class WebCrawler:
     """Crawls a website and converts pages to markdown with local links"""
     
-    def __init__(self, output_dir: str = "mirror"):
+    def __init__(self, output_dir: str = "mirror", download_assets: bool = False):
         self.output_dir = Path(output_dir)
         self.visited: Set[str] = set()
         self.url_to_path: Dict[str, str] = {}
         self.domain = ""
+        self.download_assets = download_assets
+        self.assets_dir = self.output_dir / "assets"
         
         options = Options()
         options.add_argument("--headless")
