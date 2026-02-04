@@ -14,14 +14,16 @@ def crawl(
     url: str = typer.Argument(..., help="Starting URL to crawl"),
     output: str = typer.Option("mirror", "-o", "--output", help="Output directory"),
     max_pages: int = typer.Option(10, "-m", "--max-pages", help="Maximum number of pages to crawl"),
+    download_assets: bool = typer.Option(False, "--download-assets", help="Download images and assets"),
 ):
     """Crawl a website and convert pages to markdown"""
     print(f"Starting crawl of {url}")
     print(f"Output directory: {output}")
     print(f"Maximum pages: {max_pages}")
+    print(f"Download assets: {download_assets}")
     print()
     
-    crawl_website(url, output_dir=output, max_pages=max_pages)
+    crawl_website(url, output_dir=output, max_pages=max_pages, download_assets=download_assets)
 
 
 @app.command()

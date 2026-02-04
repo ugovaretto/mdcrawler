@@ -703,10 +703,11 @@ wheels = [
 
 [[package]]
 name = "mdcrawler"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "docling" },
+    { name = "requests" },
     { name = "selenium" },
     { name = "wget" },
 ]
@@ -719,6 +720,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "docling", specifier = ">=2.72.0" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "selenium", specifier = ">=4.40.0" },
     { name = "wget", specifier = ">=3.2" },
 ]

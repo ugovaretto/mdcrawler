@@ -29,6 +29,7 @@ class WebCrawler:
         self.domain = ""
         self.download_assets = download_assets
         self.assets_dir = self.output_dir / "assets"
+        self.assets_dir.mkdir(parents=True, exist_ok=True)
         
         options = Options()
         options.add_argument("--headless")
@@ -64,6 +65,38 @@ class WebCrawler:
             safe_path = f"{safe_path}_{query_hash}"
             
         return f"{safe_path}.md"
+    
+    def _download_asset(self, asset_url: str) -> Optional[str]:
+        """Download an asset and return local relative path"""
+        if not self.download_assets:
+            return asset_url
+            
+        try:
+            parsed = urlparse(asset_url)
+            asset_name = parsed.path.split('/')[-1] or "asset"
+            
+            if not asset_name:
+                return None
+                
+            safe_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', asset_name)
+            safe_name = re.sub(r'_+', '_', safe_name)
+            
+            asset_dir = self.assets_dir
+            asset_dir.mkdir(parents=True, exist_ok=True)
+            local_path = asset_dir / safe_name
+            
+            if not local_path.exists():
+                response = requests.get(asset_url, timeout=10)
+                response.raise_for_status()
+                with open(local_path, 'wb') as f:
+                    f.write(response.content)
+                    
+            relative_path = local_path.relative_to(self.output_dir)
+            return str(relative_path)
+            
+        except Exception as e:
+            print(f"Error downloading {asset_url}: {e}")
+            return asset_url
     
     def _normalize_url(self, base_url: str, link: str) -> Optional[str]:
         """Normalize a link relative to base URL"""
@@ -222,9 +255,9 @@ class WebCrawler:
         self.driver.quit()
 
 
-def crawl_website(start_url: str, output_dir: str = "mirror", max_pages: int = 10):
+def crawl_website(start_url: str, output_dir: str = "mirror", max_pages: int = 10, download_assets: bool = False):
     """ Convenience function to crawl a website """
-    crawler = WebCrawler(output_dir)
+    crawler = WebCrawler(output_dir, download_assets=download_assets)
     try:
         crawler.crawl(start_url, max_pages)
     finally:
