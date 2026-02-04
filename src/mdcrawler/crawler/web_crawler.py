@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Set, Dict, Optional
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
-from urllib.request import urlretrieve
+from html.parser import HTMLParser
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -17,6 +17,19 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import DocumentStream
+
+
+class ImageExtractor(HTMLParser):
+    """Extract image URLs from HTML"""
+    def __init__(self):
+        super().__init__()
+        self.images = []
+    
+    def handle_starttag(self, tag, attrs):
+        if tag == 'img':
+            for name, value in attrs:
+                if name == 'src':
+                    self.images.append(value)
 
 
 class WebCrawler:
@@ -136,9 +149,9 @@ class WebCrawler:
         """Fix markdown links to be local"""
         def replace_link(match):
             link_text = match.group(1)
-            url = match.group(2)
+            link_url = match.group(2)
             
-            normalized = self._normalize_url(base_url, url)
+            normalized = self._normalize_url(base_url, link_url)
             
             if normalized and normalized in self.url_to_path:
                 local_path = self.url_to_path[normalized]
@@ -151,6 +164,18 @@ class WebCrawler:
                 return match.group(0)
         
         return re.sub(r'\[([^\]]*)\]\(([^)]+)\)', replace_link, markdown)
+    
+    def download_images(self, html_content: str) -> None:
+        """Download images from HTML content"""
+        extractor = ImageExtractor()
+        extractor.feed(html_content)
+        
+        for img_url in extractor.images:
+            full_url = urljoin(f"https://{self.domain}", img_url)
+            
+            local_path = self._download_asset(full_url)
+            if local_path and local_path != full_url:
+                print(f"Downloaded: {full_url} -> {local_path}")
     
     def crawl_page(self, url: str) -> Optional[str]:
         """Crawl a single page and return markdown"""
@@ -168,6 +193,11 @@ class WebCrawler:
             time.sleep(2)
             
             page_source = self.driver.page_source
+            
+            # Download images before conversion
+            if self.download_assets:
+                self.download_images(page_source)
+            
             markdown = self._convert_to_markdown(page_source, url)
             
             filename = self._make_safe_filename(url)
