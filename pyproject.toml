@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mdcrawler"
+version = "0.1.0"
+description = "Website to markdown converter maintaining the original site hierarchy"
+authors = [
+    { name = "ugovaretto", email = "ugovaretto@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "docling>=2.72.0",
+    "selenium>=4.40.0",
+    "wget>=3.2",
+]
+
+[project.scripts]
+mdcrawler = "mdcrawler.main:app"
+
+[dependency-groups]
+dev = [
+    "typer>=0.12.0",
+]
+
+[tool.hatch.build]
+packages = ["src/mdcrawler"]

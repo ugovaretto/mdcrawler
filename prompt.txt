@@ -1,0 +1,3 @@
+using only uv and virtual environments and using uv for everything build a webcrawler that creates a local mirror of a        │
+│   remote website in markdown format, making sure all the links are properly converted to local markdown links. Use selenium     │
+│    headless and docling do not use beautifulsoup or other libraries
