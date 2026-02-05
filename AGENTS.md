@@ -157,6 +157,9 @@ output/
 - Added call to `_fix_html_links` in conversion flow to handle HTML links from Docling
 - Fixed `_fix_html_links` regex to handle multi-line content correctly
 - Updated `_normalize_for_output` to only convert `/index.html` to `_index_html.md`
+- Added `version` CLI command to show version information
+
+### Version 0.5.0
 
 ### Version 0.5.0
 - Fixed anchor tag conversion to markdown links before Docling processing
