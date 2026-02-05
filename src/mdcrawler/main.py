@@ -16,6 +16,7 @@ def crawl(
     max_pages: int = typer.Option(10, "-m", "--max-pages", help="Maximum number of pages to crawl"),
     depth: int = typer.Option(1, "-d", "--depth", help="Maximum depth to crawl (0 = unlimited)"),
     download_assets: bool = typer.Option(False, "--download-assets", help="Download images and assets"),
+    use_sitemap: bool = typer.Option(False, "--use-sitemap", help="Use sitemap.xml if available to discover URLs"),
 ):
     """Crawl a website and convert pages to markdown"""
     print(f"Starting crawl of {url}")
@@ -23,9 +24,10 @@ def crawl(
     print(f"Maximum pages: {max_pages}")
     print(f"Crawl depth: {depth}")
     print(f"Download assets: {download_assets}")
+    print(f"Use sitemap: {use_sitemap}")
     print()
     
-    crawl_website(url, output_dir=output, max_pages=max_pages, depth=depth, download_assets=download_assets)
+    crawl_website(url, output_dir=output, max_pages=max_pages, depth=depth, download_assets=download_assets, use_sitemap=use_sitemap)
 
 
 @app.command()

@@ -4,8 +4,9 @@ import re
 import hashlib
 import time
 import requests
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Set, Dict, Optional
+from typing import Set, Dict, Optional, List
 from io import BytesIO
 from urllib.parse import urljoin, urlparse
 from html.parser import HTMLParser
@@ -36,7 +37,7 @@ class ImageExtractor(HTMLParser):
 class WebCrawler:
     """Crawls a website and converts pages to markdown with local links"""
     
-    def __init__(self, output_dir: str = "mirror", max_pages: int = 10, depth: int = 1, download_assets: bool = False):
+    def __init__(self, output_dir: str = "mirror", max_pages: int = 10, depth: int = 1, download_assets: bool = False, use_sitemap: bool = False):
         self.output_dir = Path(output_dir)
         self.visited: Set[str] = set()
         self.url_to_path: Dict[str, str] = {}
@@ -44,6 +45,7 @@ class WebCrawler:
         self.max_pages = max_pages
         self.depth = depth
         self.download_assets = download_assets
+        self.use_sitemap = use_sitemap
         self.assets_dir = self.output_dir / "assets"
         self.assets_dir.mkdir(parents=True, exist_ok=True)
         self.image_map: Dict[str, str] = {}  # Maps original image URLs to local paths
@@ -389,6 +391,44 @@ class WebCrawler:
             print(f"Error crawling {url}: {e}")
             return None
     
+    def _parse_sitemap(self, sitemap_url: str) -> List[str]:
+        """Parse sitemap.xml or sitemap_index.xml and extract URLs"""
+        urls = []
+        
+        try:
+            response = requests.get(sitemap_url, timeout=10)
+            response.raise_for_status()
+            
+            root = ET.fromstring(response.content)
+            
+            # Check if it's a sitemap index
+            ns = {'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+            
+            # Try namespace first, then without namespace
+            sitemap_nodes = root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}sitemap') or root.findall('.//sitemap')
+            
+            if sitemap_nodes:
+                # It's a sitemap index - recursively parse each sitemap
+                for sitemap in sitemap_nodes:
+                    loc = sitemap.find('.//{http://www.sitemaps.org/schemas/sitemap/0.9}loc') or sitemap.find('.//loc')
+                    if loc is not None and loc.text:
+                        urls.extend(self._parse_sitemap(loc.text))
+            else:
+                # It's a regular sitemap - extract URLs
+                url_nodes = root.findall('.//{http://www.sitemaps.org/schemas/sitemap/0.9}url') or root.findall('.//url')
+                
+                for url_elem in url_nodes:
+                    loc = url_elem.find('.//{http://www.sitemaps.org/schemas/sitemap/0.9}loc') or url_elem.find('.//loc')
+                    if loc is not None and loc.text:
+                        normalized = self._normalize_url(sitemap_url, loc.text)
+                        if normalized:
+                            urls.append(normalized)
+            
+        except Exception as e:
+            print(f"Error parsing sitemap {sitemap_url}: {e}")
+            
+        return urls
+    
     def extract_links(self, url: str) -> Set[str]:
         """Extract all links from a page"""
         links = set()
@@ -417,6 +457,28 @@ class WebCrawler:
             
         return links
     
+    def _get_sitemap_url(self, start_url: str) -> Optional[str]:
+        """Check for sitemap.xml and sitemap_index.xml at common locations"""
+        parsed = urlparse(start_url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        
+        sitemap_locations = [
+            f"{base_url}/sitemap.xml",
+            f"{base_url}/sitemap_index.xml",
+            f"{base_url}/sitemap_index.xml.gz",
+        ]
+        
+        for sitemap_url in sitemap_locations:
+            try:
+                response = requests.head(sitemap_url, timeout=5)
+                if response.status_code == 200:
+                    print(f"Found sitemap: {sitemap_url}")
+                    return sitemap_url
+            except Exception:
+                continue
+                
+        return None
+    
     def crawl(self, start_url: str, max_pages: int = None):
         """Crawl website starting from start_url"""
         if max_pages is None:
@@ -428,9 +490,27 @@ class WebCrawler:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Track depth for each URL: {url: depth_level}
-        url_depths = {start_url: 0}
-        to_visit = [start_url]
+        url_depths = {}
+        to_visit: List[str] = []
         pages_crawled = 0
+        
+        # Optional: Use sitemap to get initial URLs
+        if self.use_sitemap:
+            sitemap_url = self._get_sitemap_url(start_url)
+            if sitemap_url:
+                sitemap_urls = self._parse_sitemap(sitemap_url)
+                print(f"Discovered {len(sitemap_urls)} URLs from sitemap")
+                
+                # Add sitemap URLs to queue
+                for url in sitemap_urls:
+                    if url not in url_depths:
+                        url_depths[url] = 0
+                        to_visit.append(url)
+        
+        # Always add the start URL (even if using sitemap, for depth tracking)
+        if start_url not in url_depths:
+            url_depths[start_url] = 0
+            to_visit.append(start_url)
         
         while to_visit and pages_crawled < max_pages:
             url = to_visit.pop(0)
@@ -465,9 +545,9 @@ class WebCrawler:
         self.driver.quit()
 
 
-def crawl_website(start_url: str, output_dir: str = "mirror", max_pages: int = 10, depth: int = 1, download_assets: bool = False):
+def crawl_website(start_url: str, output_dir: str = "mirror", max_pages: int = 10, depth: int = 1, download_assets: bool = False, use_sitemap: bool = False):
     """ Convenience function to crawl a website """
-    crawler = WebCrawler(output_dir, max_pages=max_pages, depth=depth, download_assets=download_assets)
+    crawler = WebCrawler(output_dir, max_pages=max_pages, depth=depth, download_assets=download_assets, use_sitemap=use_sitemap)
     try:
         crawler.crawl(start_url)
     finally:

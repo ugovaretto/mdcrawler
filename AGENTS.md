@@ -150,16 +150,14 @@ output/
 
 ## Progress Summary
 
-### Version 0.6.0 (Current)
-- Fixed markdown link format issue where links had incorrect `_html_md.md` suffix
-- Fixed `_replace_html_extensions` method that was causing double-conversion of paths
-- Updated `_fix_local_links` to properly handle relative links by resolving them first
-- Added call to `_fix_html_links` in conversion flow to handle HTML links from Docling
-- Fixed `_fix_html_links` regex to handle multi-line content correctly
-- Updated `_normalize_for_output` to only convert `/index.html` to `_index_html.md`
-- Added `version` CLI command to show version information
+### Version 0.7.0 (Current)
+- Added `--use-sitemap` option to discover URLs from sitemap.xml files
+- Implemented sitemap parsing to improve crawl coverage
+- Sitemap support is optional (default: disabled) for backward compatibility
+- Added `_parse_sitemap()` method to handle both regular sitemaps and sitemap indexes
+- Added `_get_sitemap_url()` to automatically discover sitemap locations
 
-### Version 0.5.0
+### Version 0.6.0
 
 ### Version 0.5.0
 - Fixed anchor tag conversion to markdown links before Docling processing
@@ -225,11 +223,12 @@ output/
 - ✅ Max pages limit
 - ✅ Domain restriction
 - ✅ CLI with Typer
+- ✅ Sitemap.xml parsing (opt-in via `--use-sitemap`)
 
 ### Known Issues / In Progress
-- ✅ Links with both full URL and local path - **FIXED**: Links now properly converted to local paths
-- ✅ Duplicate links appearing in output - **FIXED**: Regex pattern now correctly matches markdown links with nested brackets
-- ✅ Docling may produce HTML links that need additional processing - **FIXED**: Anchor tags converted to markdown before Docling
+- Links with both full URL and local path - **FIXED**: Links now properly converted to local paths
+- Duplicate links appearing in output - **FIXED**: Regex pattern now correctly matches markdown links with nested brackets
+- Docling may produce HTML links that need additional processing - **FIXED**: Anchor tags converted to markdown before Docling
 
 ### Fixed Issues (v0.4.0)
 - Fixed regex pattern to correctly match markdown links with nested brackets (e.g., `[![alt](img_url)](link_url)`)
@@ -287,7 +286,7 @@ uv run mypy src/
 ### Version Management
 ```bash
 # Check current version
-uv run mdcrawler --version
+uv run mdcrawler version
 
 # Update version (manually in pyproject.toml)
 # Update version in src/mdcrawler/__init__.py
@@ -315,7 +314,7 @@ uv publish
 ```toml
 [project]
 name = "mdcrawler"
-version = "0.4.0"
+version = "0.7.0"
 requires-python = ">=3.12"
 dependencies = [
     "docling>=2.72.0",
@@ -333,9 +332,8 @@ mdcrawler = "mdcrawler.main:app"
 - [ ] Add support for JavaScript-based pagination
 - [ ] Add retry logic for failed downloads
 - [ ] Add progress indicator during crawling
-- [ ] Add support for sitemap.xml parsing
 - [ ] Add link validation after crawl
-- [ ] Add HTML link preprocessing for Docling
+- [ ] Add support for compressed sitemap files (.xml.gz)
 
 ## Support & Maintenance
 
