@@ -1,4 +1,6 @@
-# MD Crawler v0.2.1
+# MD Crawler v0.3.0
+
+A web crawler that converts websites to markdown format, creating a local mirror with properly linked pages.
 
 A web crawler that converts websites to markdown format, creating a local mirror with properly linked pages.
 
@@ -9,7 +11,7 @@ A web crawler that converts websites to markdown format, creating a local mirror
 - **Local link conversion** - internal links to local markdown paths
 - **Domain restriction** - stays within target website
 - **CLI interface** with Typer
-- **Asset downloading** - to `assets/` subdirectory
+- **Asset downloading** - images and files to `assets/` subdirectory with proper markdown references
 
 ## Requirements
 
@@ -48,6 +50,13 @@ uv run mdcrawler crawl https://example.com -o ./my-mirror
 uv run mdcrawler crawl https://example.com --download-assets
 uv run mdcrawler crawl https://example.com --max-pages 100 --download-assets
 ```
+
+### Image Assets
+
+When `--download-assets` is enabled:
+- All images from crawled pages are downloaded to `mirror/assets/`
+- Image references in markdown are converted to local paths (e.g., `assets/image.jpg`)
+- Images are properly referenced in the markdown output
 
 ### Single page conversion
 

@@ -16,7 +16,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from docling.document_converter import DocumentConverter
-from docling.datamodel.base_models import DocumentStream
+from docling.datamodel.base_models import DocumentStream, InputFormat
+from docling.datamodel.pipeline_options import ConvertPipelineOptions, ThreadedPdfPipelineOptions
 
 
 class ImageExtractor(HTMLParser):
@@ -43,6 +44,7 @@ class WebCrawler:
         self.download_assets = download_assets
         self.assets_dir = self.output_dir / "assets"
         self.assets_dir.mkdir(parents=True, exist_ok=True)
+        self.image_map: Dict[str, str] = {}  # Maps original image URLs to local paths
         
         options = Options()
         options.add_argument("--headless")
@@ -52,6 +54,7 @@ class WebCrawler:
         options.add_argument("--window-size=1920,1080")
         
         self.driver = webdriver.Chrome(options=options)
+        
         self.converter = DocumentConverter()
         
     def _make_safe_filename(self, url: str) -> str:
@@ -128,28 +131,59 @@ class WebCrawler:
         except Exception:
             return None
     
-    def _convert_to_markdown(self, html_content: str, url: str) -> str:
-        """Convert HTML content to markdown using Docling"""
-        try:
-            stream = DocumentStream(name=url.split('/')[-1] or "index.html", stream=BytesIO(html_content.encode('utf-8')))
-            result = self.converter.convert(stream)
+    def _extract_image_urls(self, html_content: str) -> list:
+        """Extract image URLs from HTML content"""
+        extractor = ImageExtractor()
+        extractor.feed(html_content)
+        return extractor.images
+    
+    def _download_images(self, html_content: str, base_url: str) -> Dict[str, str]:
+        """Download images from HTML content and return mapping to local paths"""
+        image_urls = self._extract_image_urls(html_content)
+        image_mapping = {}
+        
+        for img_url in image_urls:
+            # Convert relative URL to absolute
+            full_url = urljoin(base_url, img_url)
             
-            if result.document:
-                markdown = result.document.export_to_markdown()
-                if markdown:
-                    return markdown
-                    
-            return html_content
+            # Download the image
+            local_path = self._download_asset(full_url)
             
-        except Exception as e:
-            print(f"Error converting {url}: {e}")
-            return "# Error converting content\n\n[Original HTML content could not be parsed]"
+            if local_path and local_path != full_url:
+                print(f"Downloaded: {full_url} -> {local_path}")
+                image_mapping[full_url] = local_path
+                
+        return image_mapping
+    
+    def _replace_image_refs_in_markdown(self, markdown: str, image_mapping: Dict[str, str]) -> str:
+        """Replace image URLs in markdown with local paths"""
+        def replace_img(match):
+            alt_text = match.group(1)
+            img_url = match.group(2)
+            
+            # Parse the URL
+            parsed = urlparse(img_url)
+            img_filename = parsed.path.split('/')[-1]
+            
+            # Check if this image was downloaded (match by filename)
+            for orig_url, local_path in image_mapping.items():
+                if orig_url.endswith(img_filename):
+                    return f"![{alt_text}]({local_path})"
+            
+            return match.group(0)
+        
+        # Match markdown image syntax: ![alt](url)
+        return re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_img, markdown)
     
     def _fix_local_links(self, markdown: str, base_url: str) -> str:
-        """Fix markdown links to be local"""
+        """Fix markdown links to be local, excluding image references"""
         def replace_link(match):
             link_text = match.group(1)
             link_url = match.group(2)
+            
+            # Skip if this is an image reference (starts with !)
+            if link_text.startswith('!'):
+                return match.group(0)
             
             normalized = self._normalize_url(base_url, link_url)
             
@@ -165,17 +199,46 @@ class WebCrawler:
         
         return re.sub(r'\[([^\]]*)\]\(([^)]+)\)', replace_link, markdown)
     
-    def download_images(self, html_content: str) -> None:
-        """Download images from HTML content"""
-        extractor = ImageExtractor()
-        extractor.feed(html_content)
-        
-        for img_url in extractor.images:
-            full_url = urljoin(f"https://{self.domain}", img_url)
+    def _convert_to_markdown(self, html_content: str, url: str) -> str:
+        """Convert HTML content to markdown using Docling with referenced images"""
+        try:
+            # Pre-process HTML to convert img tags to markdown image syntax
+            processed_html = self._convert_img_tags_to_markdown(html_content, url)
             
-            local_path = self._download_asset(full_url)
-            if local_path and local_path != full_url:
-                print(f"Downloaded: {full_url} -> {local_path}")
+            stream = DocumentStream(name=url.split('/')[-1] or "index.html", stream=BytesIO(processed_html.encode('utf-8')))
+            result = self.converter.convert(stream)
+            
+            if result.document:
+                # Export to markdown
+                markdown = result.document.export_to_markdown()
+                if markdown:
+                    return markdown
+                    
+            return html_content
+            
+        except Exception as e:
+            print(f"Error converting {url}: {e}")
+            return "# Error converting content\n\n[Original HTML content could not be parsed]"
+    
+    def _convert_img_tags_to_markdown(self, html_content: str, base_url: str) -> str:
+        """Convert HTML img tags to markdown image syntax"""
+        def replace_img_tag(match):
+            img_tag = match.group(0)
+            # Extract alt text
+            alt_match = re.search(r'alt=["\']([^"\']*)["\']', img_tag)
+            alt_text = alt_match.group(1) if alt_match else "image"
+            
+            # Extract src
+            src_match = re.search(r'src=["\']([^"\']*)["\']', img_tag)
+            if src_match:
+                img_src = src_match.group(1)
+                full_url = urljoin(base_url, img_src)
+                return f"![{alt_text}]({full_url})"
+            
+            return match.group(0)
+        
+        # Match img tags with src attribute
+        return re.sub(r'<img[^>]*src=["\'][^"\']*["\'][^>]*>', replace_img_tag, html_content, flags=re.IGNORECASE)
     
     def crawl_page(self, url: str) -> Optional[str]:
         """Crawl a single page and return markdown"""
@@ -194,11 +257,16 @@ class WebCrawler:
             
             page_source = self.driver.page_source
             
-            # Download images before conversion
+            # Download images and build mapping
+            image_mapping = {}
             if self.download_assets:
-                self.download_images(page_source)
+                image_mapping = self._download_images(page_source, url)
             
             markdown = self._convert_to_markdown(page_source, url)
+            
+            # Replace image references in markdown with local paths
+            if self.download_assets and image_mapping:
+                markdown = self._replace_image_refs_in_markdown(markdown, image_mapping)
             
             filename = self._make_safe_filename(url)
             self.url_to_path[url] = filename
