@@ -1,0 +1,5 @@
+- **[Books to Scrape](http://books.toscrape.com/)**: This static e-commerce demo site is ideal for beginners to practice basic scraping and pagination. It includes product data like prices, ratings, images (assets), and categories.
+- **[Quotes to Scrape](http://quotes.toscrape.com/)**: Useful for practicing pagination, handling dynamic content, and even simple authentication flows. It also has a JavaScript version for more advanced testing.
+- **[Cyotek HTTP Crawler Test Site](https://demo.cyotek.com/)**: Specifically designed to test how crawlers handle various HTTP features and errors, including links to different types of assets.
+- **[Scrape This Site](https://www.scrapethissite.com/)** (Sandbox page): Offers structured datasets on topics like countries and hockey teams, which is excellent for practicing parsing tables and well-organized data formats.
+- **[Web Scraper Test Sites](https://webscraper.io/test-sites)**: This collection features different e-commerce layouts with various pagination types (standard links, AJAX, "Load more" buttons, infinite scrolling) to test dynamic asset loading.
