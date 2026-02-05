@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mdcrawler"
-version = "0.3.0"
+version = "0.6.0"
 description = "Website to markdown converter maintaining the original site hierarchy"
 authors = [
     { name = "ugovaretto", email = "ugovaretto@gmail.com" }

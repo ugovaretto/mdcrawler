@@ -36,11 +36,13 @@ class ImageExtractor(HTMLParser):
 class WebCrawler:
     """Crawls a website and converts pages to markdown with local links"""
     
-    def __init__(self, output_dir: str = "mirror", download_assets: bool = False):
+    def __init__(self, output_dir: str = "mirror", max_pages: int = 10, depth: int = 1, download_assets: bool = False):
         self.output_dir = Path(output_dir)
         self.visited: Set[str] = set()
         self.url_to_path: Dict[str, str] = {}
         self.domain = ""
+        self.max_pages = max_pages
+        self.depth = depth
         self.download_assets = download_assets
         self.assets_dir = self.output_dir / "assets"
         self.assets_dir.mkdir(parents=True, exist_ok=True)
@@ -115,7 +117,7 @@ class WebCrawler:
             return asset_url
     
     def _normalize_url(self, base_url: str, link: str) -> Optional[str]:
-        """Normalize a link relative to base URL"""
+        """Normalize a link relative to base URL, keeping .html extension for internal lookup"""
         try:
             normalized = urljoin(base_url, link)
             parsed = urlparse(normalized)
@@ -127,9 +129,22 @@ class WebCrawler:
                 return None
                 
             fragment_removed = normalized.split('#')[0]
+            # Keep .html for internal lookup - convert to .md later for output
             return fragment_removed
         except Exception:
             return None
+    
+    def _normalize_for_output(self, url: str) -> str:
+        """Normalize URL for output - convert .html to .md and fix paths"""
+        if not url:
+            return url
+        # Convert .html to .md
+        if url.endswith('.html'):
+            url = url[:-5] + '.md'
+        # Convert /index.md to _index_html.md for consistency
+        if url.endswith('/index.md'):
+            url = url[:-9] + '_index_html.md'
+        return url
     
     def _extract_image_urls(self, html_content: str) -> list:
         """Extract image URLs from HTML content"""
@@ -176,34 +191,95 @@ class WebCrawler:
         return re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_img, markdown)
     
     def _fix_local_links(self, markdown: str, base_url: str) -> str:
-        """Fix markdown links to be local, excluding image references"""
+        """Fix markdown links to be local, excluding image-only references"""
         def replace_link(match):
             link_text = match.group(1)
             link_url = match.group(2)
             
-            # Skip if this is an image reference (starts with !)
+            # Skip if this is an image reference
             if link_text.startswith('!'):
                 return match.group(0)
             
-            normalized = self._normalize_url(base_url, link_url)
-            
-            if normalized and normalized in self.url_to_path:
-                local_path = self.url_to_path[normalized]
-                return f"[{link_text}]({local_path})"
-            elif normalized:
+            # For relative links, resolve them first then convert to safe filename
+            if not link_url.startswith('http'):
+                # Resolve relative URL to absolute
+                resolved_url = urljoin(base_url, link_url)
+                # Normalize and convert to safe filename
+                normalized = self._normalize_url(base_url, resolved_url)
+                if not normalized:
+                    return match.group(0)
+                
+                if normalized in self.url_to_path:
+                    local_path = self.url_to_path[normalized]
+                    return f"[{link_text}]({local_path})"
+                
                 filename = self._make_safe_filename(normalized)
                 self.url_to_path[normalized] = filename
                 return f"[{link_text}]({filename})"
-            else:
+            
+            # Normalize the URL
+            normalized = self._normalize_url(base_url, link_url)
+            
+            if not normalized:
                 return match.group(0)
+            
+            # Check if we have this URL in our mapping
+            if normalized in self.url_to_path:
+                local_path = self.url_to_path[normalized]
+                return f"[{link_text}]({local_path})"
+            
+            # Generate the filename for this URL
+            filename = self._make_safe_filename(normalized)
+            self.url_to_path[normalized] = filename
+            
+            return f"[{link_text}]({filename})"
         
-        return re.sub(r'\[([^\]]*)\]\(([^)]+)\)', replace_link, markdown)
+        # Match markdown links: [text](url)
+        # Use a non-greedy pattern that handles nested brackets and stops at whitespace or end
+        result = re.sub(r'\[([^\]]*(?:\][^\]]*)*?)\]\(([^)]+?)\)(?=\s|$)', replace_link, markdown)
+        return result
+    
+
+    def _fix_html_links(self, markdown: str, base_url: str) -> str:
+        """Fix HTML links in markdown output (Docling may produce HTML links)"""
+        def replace_html_link(match):
+            href = match.group(1)
+            link_text = match.group(2)
+            
+            # Normalize the URL
+            normalized = self._normalize_url(base_url, href)
+            
+            if not normalized:
+                return match.group(0)
+            
+            # Check if we have this URL in our mapping
+            if normalized in self.url_to_path:
+                local_path = self.url_to_path[normalized]
+                return f"[{link_text}]({local_path})"
+            
+            # Generate the filename for this URL
+            filename = self._make_safe_filename(normalized)
+            self.url_to_path[normalized] = filename
+            
+            return f"[{link_text}]({filename})"
+        
+        # Match HTML anchor links: <a href="url">text</a>
+        # Use re.DOTALL to match multi-line content, and capture everything between tags as link text
+        return re.sub(r'<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>', replace_html_link, markdown, flags=re.IGNORECASE | re.DOTALL)
+    
+    def _replace_html_extensions(self, markdown: str) -> str:
+        """Replace .html paths with .md in markdown links"""
+        # This method is no longer needed - links are properly converted by _fix_local_links
+        # and _make_safe_filename which correctly convert to _html.md format
+        # Keeping minimal implementation to avoid double-conversion
+        return markdown
     
     def _convert_to_markdown(self, html_content: str, url: str) -> str:
         """Convert HTML content to markdown using Docling with referenced images"""
         try:
-            # Pre-process HTML to convert img tags to markdown image syntax
+            # Pre-process HTML to convert img and anchor tags to markdown syntax
             processed_html = self._convert_img_tags_to_markdown(html_content, url)
+            processed_html = self._convert_anchor_tags_to_markdown(processed_html, url)
             
             stream = DocumentStream(name=url.split('/')[-1] or "index.html", stream=BytesIO(processed_html.encode('utf-8')))
             result = self.converter.convert(stream)
@@ -212,6 +288,10 @@ class WebCrawler:
                 # Export to markdown
                 markdown = result.document.export_to_markdown()
                 if markdown:
+                    # Post-process to replace HTML links with markdown links
+                    markdown = self._fix_html_links(markdown, url)
+                    # Post-process to replace .html with .md in paths
+                    markdown = self._replace_html_extensions(markdown)
                     return markdown
                     
             return html_content
@@ -239,6 +319,26 @@ class WebCrawler:
         
         # Match img tags with src attribute
         return re.sub(r'<img[^>]*src=["\'][^"\']*["\'][^>]*>', replace_img_tag, html_content, flags=re.IGNORECASE)
+    
+    def _convert_anchor_tags_to_markdown(self, html_content: str, base_url: str) -> str:
+        """Convert HTML anchor tags to markdown links"""
+        def replace_anchor_tag(match):
+            anchor_tag = match.group(0)
+            # Extract text content (between opening and closing tags)
+            text_match = re.search(r'>([^<]*)</a>', anchor_tag, re.IGNORECASE)
+            link_text = text_match.group(1).strip() if text_match else "link"
+            
+            # Extract href
+            href_match = re.search(r'href=["\']([^"\']*)["\']', anchor_tag)
+            if href_match:
+                href = href_match.group(1)
+                full_url = urljoin(base_url, href)
+                return f"[{link_text}]({full_url})"
+            
+            return match.group(0)
+        
+        # Match anchor tags with href attribute (including multi-line content)
+        return re.sub(r'<a[^>]*href=["\'][^"\']*["\'][^>]*>.*?</a>', replace_anchor_tag, html_content, flags=re.IGNORECASE | re.DOTALL)
     
     def crawl_page(self, url: str) -> Optional[str]:
         """Crawl a single page and return markdown"""
@@ -274,6 +374,7 @@ class WebCrawler:
             md_path = self.output_dir / filename
             md_path.parent.mkdir(parents=True, exist_ok=True)
             
+            # Fix any remaining links to be local paths
             markdown = self._fix_local_links(markdown, url)
             
             with open(md_path, 'w', encoding='utf-8') as f:
@@ -316,13 +417,18 @@ class WebCrawler:
             
         return links
     
-    def crawl(self, start_url: str, max_pages: int = 10):
+    def crawl(self, start_url: str, max_pages: int = None):
         """Crawl website starting from start_url"""
+        if max_pages is None:
+            max_pages = self.max_pages
+            
         parsed = urlparse(start_url)
         self.domain = parsed.netloc
         
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
+        # Track depth for each URL: {url: depth_level}
+        url_depths = {start_url: 0}
         to_visit = [start_url]
         pages_crawled = 0
         
@@ -330,6 +436,11 @@ class WebCrawler:
             url = to_visit.pop(0)
             
             if url in self.visited:
+                continue
+                
+            # Check depth limit (0 = unlimited)
+            current_depth = url_depths.get(url, 0)
+            if self.depth > 0 and current_depth >= self.depth:
                 continue
                 
             self.crawl_page(url)
@@ -343,6 +454,7 @@ class WebCrawler:
             for link in new_links:
                 if link not in self.visited and link not in to_visit:
                     to_visit.append(link)
+                    url_depths[link] = current_depth + 1
                     
         print(f"\nCrawl complete!")
         print(f"Pages crawled: {pages_crawled}")
@@ -353,11 +465,11 @@ class WebCrawler:
         self.driver.quit()
 
 
-def crawl_website(start_url: str, output_dir: str = "mirror", max_pages: int = 10, download_assets: bool = False):
+def crawl_website(start_url: str, output_dir: str = "mirror", max_pages: int = 10, depth: int = 1, download_assets: bool = False):
     """ Convenience function to crawl a website """
-    crawler = WebCrawler(output_dir, download_assets=download_assets)
+    crawler = WebCrawler(output_dir, max_pages=max_pages, depth=depth, download_assets=download_assets)
     try:
-        crawler.crawl(start_url, max_pages)
+        crawler.crawl(start_url)
     finally:
         crawler.close()
 
@@ -366,10 +478,11 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) < 2:
-        print("Usage: python -m mdcrawler.crawler.web_crawler <url> [max_pages]")
+        print("Usage: python -m mdcrawler.crawler.web_crawler <url> [max_pages] [depth]")
         sys.exit(1)
         
     start_url = sys.argv[1]
     max_pages = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+    depth = int(sys.argv[3]) if len(sys.argv) > 3 else 1
     
-    crawl_website(start_url, output_dir="mirror", max_pages=max_pages)
+    crawl_website(start_url, output_dir="mirror", max_pages=max_pages, depth=depth)
