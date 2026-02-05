@@ -57,6 +57,9 @@ mirror/
 # Temporary files and directories starting with tmp
 tmp*
 
+# Python cache directories anywhere in path
+**/__pycache__/
+
 # Virtual environments
 .venv/
 venv/
@@ -84,9 +87,3 @@ htmlcov/
 
 # Documentation
 docs/
-
-# Mirror output
-mirror/
-
-# Temporary files and directories starting with tmp
-tmp*
